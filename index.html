@@ -131,16 +131,25 @@
   .streak-day.level-4 { background: #3fb950; border-color: #3fb950; }
   .streak-day.today { outline: 2px solid #58a6ff; outline-offset: 1px; }
   .streak-calendar { display: block; }
-  .cal-scroll { overflow-x: auto; padding: 4px 0 8px; }
-  .cal-inner { display: flex; gap: 8px; width: max-content; margin: 0 auto; }
-  .cal-days { display: grid; grid-template-rows: repeat(7, 12px); gap: 3px; padding-top: 18px; }
-  .cal-days span { font-size: 0.65rem; color: #8b949e; line-height: 12px; }
-  .cal-months { display: grid; column-gap: 3px; height: 14px; margin-bottom: 4px; }
-  .cal-months span { font-size: 0.7rem; color: #8b949e; font-weight: 600; white-space: nowrap; line-height: 14px; }
-  .cal-grid { display: grid; grid-template-rows: repeat(7, 12px); grid-auto-flow: column; grid-auto-columns: 12px; gap: 3px; }
-  .streak-day.before { opacity: 0.35; }
   .panel-title { text-align: center; font-size: 0.85rem; color: #8b949e; margin-bottom: 8px; }
-  .streak-day.future { opacity: 0.35; }
+  /* Month calendar */
+  .cal-wrap { max-width: 460px; margin: 0 auto; }
+  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .cal-title { font-weight: 700; font-size: 1.05rem; color: #f0f6fc; }
+  .cal-nav { background: #0d1117; border: 1px solid #30363d; color: #e6edf3; width: 36px; height: 36px; border-radius: 8px; cursor: pointer; font-size: 1.1rem; line-height: 1; font-family: inherit; }
+  .cal-nav:hover:not(:disabled) { background: #21262d; border-color: #484f58; }
+  .cal-nav:disabled { opacity: 0.3; cursor: default; }
+  .cal-grid7 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-dow { text-align: center; font-size: 0.7rem; color: #8b949e; font-weight: 600; padding-bottom: 4px; }
+  .cal-day { min-height: 46px; border-radius: 6px; border: 1px solid #21262d; background: #161b22; color: #8b949e; padding: 4px 6px; font-size: 0.78rem; display: flex; flex-direction: column; justify-content: space-between; }
+  .cal-day.empty { visibility: hidden; }
+  .cal-day.before, .cal-day.future { opacity: 0.45; }
+  .cal-day.level-1 { background: #0e4429; border-color: #1a7f37; color: #e6edf3; }
+  .cal-day.level-2 { background: #006d32; border-color: #238636; color: #e6edf3; }
+  .cal-day.level-3 { background: #26a641; border-color: #2ea043; color: #fff; }
+  .cal-day.level-4 { background: #3fb950; border-color: #3fb950; color: #0d1117; }
+  .cal-day.today { outline: 2px solid #58a6ff; outline-offset: 1px; }
+  .cal-hrs { font-size: 0.68rem; align-self: flex-end; font-variant-numeric: tabular-nums; }
   .streak-legend { display: flex; gap: 8px; margin-top: 12px; font-size: 0.7rem; color: #8b949e; align-items: center; flex-wrap: wrap; justify-content: center; }
   .streak-legend span { display: flex; align-items: center; gap: 4px; }
   .streak-legend-box.level-0 { background: #161b22; }
@@ -784,9 +793,9 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// ===== STREAK CALENDAR =====
-// Starts on the day the account was created (or your first log, whichever is earlier),
-// weeks run Monday to Sunday, and it ends at the end of the current month.
+// ===== STREAK CALENDAR (month view) =====
+let calMonth = null; // first day of the month being shown
+
 function renderStreakAndWeekly() {
   try {
     const calendarEl = document.getElementById('streakCalendar');
@@ -799,73 +808,61 @@ function renderStreakAndWeekly() {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const todayStr = toLocalDateStr(today);
 
-    // Calendar start = sign-up day or earliest log, whichever is earlier
+    // Tracking start = sign-up day or earliest log, whichever is earlier
     let start = null;
     const su = localStorage.getItem('boardTracker_signupDate');
     if (su) start = new Date(su + 'T00:00:00');
     studyLogs.forEach(l => { const d = new Date(l.date + 'T00:00:00'); if (!start || d < start) start = d; });
-    if (!start) start = new Date(today.getFullYear(), today.getMonth(), 1);
-    if (start > today) start = new Date(today);
+    if (!start || start > today) start = new Date(today);
 
-    const mondayOffset = d => (d.getDay() + 6) % 7;
-    const gridStart = new Date(start); gridStart.setDate(start.getDate() - mondayOffset(start));
-    const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    const gridEnd = new Date(monthEnd); gridEnd.setDate(monthEnd.getDate() + (6 - mondayOffset(monthEnd)));
-    // Always show at least 26 weeks so the calendar looks full from day one
-    const minStart = new Date(gridEnd); minStart.setDate(gridEnd.getDate() - (26 * 7 - 1));
-    if (minStart < gridStart) gridStart.setTime(minStart.getTime());
+    // Months you can browse: from your start month up to the exam month
+    const firstMonth = new Date(start.getFullYear(), start.getMonth(), 1);
+    const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    let lastMonth = new Date(examDate.getFullYear(), examDate.getMonth(), 1);
+    if (lastMonth < thisMonth) lastMonth = thisMonth;
+    if (!calMonth) calMonth = new Date(thisMonth);
+    if (calMonth < firstMonth) calMonth = new Date(firstMonth);
+    if (calMonth > lastMonth) calMonth = new Date(lastMonth);
+
+    const y = calMonth.getFullYear(), m = calMonth.getMonth();
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const lead = (new Date(y, m, 1).getDay() + 6) % 7; // Monday = 0
 
     let cells = '';
-    let col = 0, dow = 0;
-    const labels = [];
-    for (let d = new Date(gridStart); d <= gridEnd; d.setDate(d.getDate() + 1)) {
-      if (dow === 0) {
-        // month label if this week contains the 1st of a month (or is the first week)
-        let label = null;
-        for (let k = 0; k < 7; k++) {
-          const x = new Date(d); x.setDate(d.getDate() + k);
-          if (x.getDate() === 1 && x <= monthEnd) { label = x.toLocaleString('en-IN', { month: 'short' }); break; }
-        }
-        if (!label && col === 0) label = d.toLocaleString('en-IN', { month: 'short' });
-        if (label) labels.push({ col, label });
-      }
-      if (d < start) {
-        cells += '<div class="streak-day level-0 before" title="Before you started tracking"></div>';
-      } else {
-        const dateStr = toLocalDateStr(d);
-        const hours = dailyHours[dateStr] || 0;
-        let level = 0;
-        if (hours > 0) level = 1;
-        if (hours >= 2) level = 2;
-        if (hours >= 4) level = 3;
-        if (hours >= 6) level = 4;
-        const isFuture = d > today;
-        const tip = isFuture ? formatDate(dateStr) : (hours > 0 ? `${hours}h on ${formatDate(dateStr)}` : `No study on ${formatDate(dateStr)}`);
-        cells += `<div class="streak-day level-${level} ${dateStr === todayStr ? 'today' : ''} ${isFuture ? 'future' : ''}" title="${tip}"></div>`;
-      }
-      dow++;
-      if (dow === 7) { dow = 0; col++; }
+    for (let i = 0; i < lead; i++) cells += '<div class="cal-day empty"></div>';
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(y, m, day);
+      const dateStr = toLocalDateStr(d);
+      const hours = dailyHours[dateStr] || 0;
+      let level = 0;
+      if (hours > 0) level = 1;
+      if (hours >= 2) level = 2;
+      if (hours >= 4) level = 3;
+      if (hours >= 6) level = 4;
+      const cls = ['cal-day', 'level-' + level];
+      if (d < start) cls.push('before');
+      if (d > today) cls.push('future');
+      if (dateStr === todayStr) cls.push('today');
+      const tip = hours > 0 ? `${hours}h on ${formatDate(dateStr)}` : (d > today ? formatDate(dateStr) : `No study on ${formatDate(dateStr)}`);
+      cells += `<div class="${cls.join(' ')}" title="${tip}"><span>${day}</span>${hours > 0 ? `<span class="cal-hrs">${hours}h</span>` : ''}</div>`;
     }
-    const weeks = col;
 
-    // Avoid overlapping month labels
-    if (labels.length > 1 && labels[1].col - labels[0].col < 3) labels.shift();
-    const monthsHtml = labels.map(l => `<span style="grid-column:${l.col + 1}">${l.label}</span>`).join('');
-
+    const title = calMonth.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+    const dows = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(n => `<div class="cal-dow">${n}</div>`).join('');
     calendarEl.innerHTML = `
-      <div class="cal-scroll">
-        <div class="cal-inner">
-          <div class="cal-days"><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span><span></span></div>
-          <div>
-            <div class="cal-months" style="grid-template-columns: repeat(${weeks}, 12px)">${monthsHtml}</div>
-            <div class="cal-grid">${cells}</div>
-          </div>
+      <div class="cal-wrap">
+        <div class="cal-head">
+          <button type="button" class="cal-nav" id="calPrev" aria-label="Previous month" ${calMonth <= firstMonth ? 'disabled' : ''}>&#8249;</button>
+          <div class="cal-title">${title}</div>
+          <button type="button" class="cal-nav" id="calNext" aria-label="Next month" ${calMonth >= lastMonth ? 'disabled' : ''}>&#8250;</button>
         </div>
+        <div class="cal-grid7">${dows}${cells}</div>
       </div>`;
-    const scroller = calendarEl.querySelector('.cal-scroll');
-    if (scroller) scroller.scrollLeft = scroller.scrollWidth;
+    const prev = calendarEl.querySelector('#calPrev'), next = calendarEl.querySelector('#calNext');
+    if (prev) prev.onclick = () => { calMonth = new Date(y, m - 1, 1); renderStreakAndWeekly(); };
+    if (next) next.onclick = () => { calMonth = new Date(y, m + 1, 1); renderStreakAndWeekly(); };
 
-    // Stats
+    // Stats (counted from your start day to today)
     let longestStreak = 0, tempStreak = 0, totalActiveDays = 0;
     for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
       if ((dailyHours[toLocalDateStr(d)] || 0) > 0) {
