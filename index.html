@@ -130,6 +130,16 @@
   .streak-day.level-3 { background: #26a641; border-color: #2ea043; }
   .streak-day.level-4 { background: #3fb950; border-color: #3fb950; }
   .streak-day.today { outline: 2px solid #58a6ff; outline-offset: 1px; }
+  .streak-calendar { display: block; }
+  .cal-scroll { overflow-x: auto; padding: 4px 0 8px; }
+  .cal-inner { display: flex; gap: 8px; width: max-content; margin: 0 auto; }
+  .cal-days { display: grid; grid-template-rows: repeat(7, 12px); gap: 3px; padding-top: 18px; }
+  .cal-days span { font-size: 0.65rem; color: #8b949e; line-height: 12px; }
+  .cal-months { display: grid; column-gap: 3px; height: 14px; margin-bottom: 4px; }
+  .cal-months span { font-size: 0.7rem; color: #8b949e; font-weight: 600; white-space: nowrap; line-height: 14px; }
+  .cal-grid { display: grid; grid-template-rows: repeat(7, 12px); grid-auto-flow: column; grid-auto-columns: 12px; gap: 3px; }
+  .streak-day.blank { visibility: hidden; }
+  .streak-day.future { opacity: 0.35; }
   .streak-legend { display: flex; gap: 8px; margin-top: 12px; font-size: 0.7rem; color: #8b949e; align-items: center; flex-wrap: wrap; justify-content: center; }
   .streak-legend span { display: flex; align-items: center; gap: 4px; }
   .streak-legend-box.level-0 { background: #161b22; }
@@ -773,113 +783,105 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// ===== STREAK CALENDAR & WEEKLY CHART =====
+// ===== STREAK CALENDAR =====
+// Starts on the day the account was created (or your first log, whichever is earlier),
+// weeks run Monday to Sunday, and it ends at the end of the current month.
 function renderStreakAndWeekly() {
   try {
-    // Build daily hours map from study logs (using local date strings)
-    const dailyHours = {};
-    studyLogs.forEach(log => {
-      dailyHours[log.date] = (dailyHours[log.date] || 0) + log.hours;
-    });
-
-    // --- Determine calendar date range ---
-    // Start from earliest log date, or 4 weeks ago if no logs
-    const today = new Date();
-    const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    let startDate;
-    if (studyLogs.length > 0) {
-      const dates = studyLogs.map(l => new Date(l.date + 'T00:00:00'));
-      const earliest = new Date(Math.min(...dates));
-      const dayOfWeek = earliest.getDay();
-      startDate = new Date(earliest);
-      startDate.setDate(earliest.getDate() - dayOfWeek);
-    } else {
-      startDate = new Date(endDate);
-      startDate.setDate(endDate.getDate() - 28);
-      const dayOfWeek = startDate.getDay();
-      startDate.setDate(startDate.getDate() - dayOfWeek);
-    }
-
     const calendarEl = document.getElementById('streakCalendar');
     if (!calendarEl) return;
-    let html = '';
-    let currentStreak = 0;
-    let longestStreak = 0;
-    let tempStreak = 0;
-    let totalActiveDays = 0;
 
+    const dailyHours = {};
+    studyLogs.forEach(log => { dailyHours[log.date] = (dailyHours[log.date] || 0) + log.hours; });
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const todayStr = toLocalDateStr(today);
-    const endDateStr = toLocalDateStr(endDate);
 
-    const weekCount = Math.ceil((endDate - startDate) / (7 * 86400000)) + 1;
-    const months = {};
+    // Calendar start = sign-up day or earliest log, whichever is earlier
+    let start = null;
+    const su = localStorage.getItem('boardTracker_signupDate');
+    if (su) start = new Date(su + 'T00:00:00');
+    studyLogs.forEach(l => { const d = new Date(l.date + 'T00:00:00'); if (!start || d < start) start = d; });
+    if (!start) start = new Date(today.getFullYear(), today.getMonth(), 1);
+    if (start > today) start = new Date(today);
 
-    for (let w = 0; w < weekCount; w++) {
-      const weekStart = new Date(startDate);
-      weekStart.setDate(startDate.getDate() + w * 7);
-      const monthKey = weekStart.toLocaleString('en-IN', { month: 'short', year: '2-digit' });
-      if (!months[monthKey]) months[monthKey] = [];
-      months[monthKey].push(weekStart);
-    }
+    const mondayOffset = d => (d.getDay() + 6) % 7;
+    const gridStart = new Date(start); gridStart.setDate(start.getDate() - mondayOffset(start));
+    const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    const gridEnd = new Date(monthEnd); gridEnd.setDate(monthEnd.getDate() + (6 - mondayOffset(monthEnd)));
 
-    Object.entries(months).forEach(([monthLabel, weeks]) => {
-      html += `<div class="streak-month"><div class="streak-month-label">${monthLabel}</div>`;
-      weeks.forEach(weekStart => {
-        html += '<div class="streak-week">';
-        for (let d = 0; d < 7; d++) {
-          const day = new Date(weekStart);
-          day.setDate(weekStart.getDate() + d);
-          if (day > endDate) {
-            html += '<div class="streak-day"></div>';
-            continue;
-          }
-          const dateStr = toLocalDateStr(day);
-          const hours = dailyHours[dateStr] || 0;
-          let level = 0;
-          if (hours > 0) level = 1;
-          if (hours >= 2) level = 2;
-          if (hours >= 4) level = 3;
-          if (hours >= 6) level = 4;
-          const isToday = dateStr === todayStr;
-          const tooltip = hours > 0 ? `${hours}h on ${formatDate(dateStr)}` : `No study on ${formatDate(dateStr)}`;
-          html += `<div class="streak-day level-${level} ${isToday ? 'today' : ''}" title="${tooltip}"></div>`;
-
-          if (hours > 0) {
-            totalActiveDays++;
-            tempStreak++;
-            longestStreak = Math.max(longestStreak, tempStreak);
-          } else {
-            tempStreak = 0;
-          }
+    let cells = '';
+    let col = 0, dow = 0;
+    const labels = [];
+    for (let d = new Date(gridStart); d <= gridEnd; d.setDate(d.getDate() + 1)) {
+      if (dow === 0) {
+        // month label if this week contains the 1st of a month (or is the first week)
+        let label = null;
+        for (let k = 0; k < 7; k++) {
+          const x = new Date(d); x.setDate(d.getDate() + k);
+          if (x.getDate() === 1 && x >= start && x <= monthEnd) { label = x.toLocaleString('en-IN', { month: 'short' }); break; }
         }
-        html += '</div>';
-      });
-      html += '</div>';
-    });
-
-    let checkDate = new Date(today);
-    while (true) {
-      const dateStr = toLocalDateStr(checkDate);
-      if (dailyHours[dateStr] > 0) {
-        currentStreak++;
-        checkDate.setDate(checkDate.getDate() - 1);
-      } else {
-        break;
+        if (!label && col === 0) label = start.toLocaleString('en-IN', { month: 'short' });
+        if (label) labels.push({ col, label });
       }
+      if (d < start) {
+        cells += '<div class="streak-day blank"></div>';
+      } else {
+        const dateStr = toLocalDateStr(d);
+        const hours = dailyHours[dateStr] || 0;
+        let level = 0;
+        if (hours > 0) level = 1;
+        if (hours >= 2) level = 2;
+        if (hours >= 4) level = 3;
+        if (hours >= 6) level = 4;
+        const isFuture = d > today;
+        const tip = isFuture ? formatDate(dateStr) : (hours > 0 ? `${hours}h on ${formatDate(dateStr)}` : `No study on ${formatDate(dateStr)}`);
+        cells += `<div class="streak-day level-${level} ${dateStr === todayStr ? 'today' : ''} ${isFuture ? 'future' : ''}" title="${tip}"></div>`;
+      }
+      dow++;
+      if (dow === 7) { dow = 0; col++; }
     }
+    const weeks = col;
 
-    calendarEl.innerHTML = html;
+    // Avoid overlapping month labels
+    if (labels.length > 1 && labels[1].col - labels[0].col < 3) labels.shift();
+    const monthsHtml = labels.map(l => `<span style="grid-column:${l.col + 1}">${l.label}</span>`).join('');
+
+    calendarEl.innerHTML = `
+      <div class="cal-scroll">
+        <div class="cal-inner">
+          <div class="cal-days"><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span><span></span></div>
+          <div>
+            <div class="cal-months" style="grid-template-columns: repeat(${weeks}, 12px)">${monthsHtml}</div>
+            <div class="cal-grid">${cells}</div>
+          </div>
+        </div>
+      </div>`;
+    const scroller = calendarEl.querySelector('.cal-scroll');
+    if (scroller) scroller.scrollLeft = scroller.scrollWidth;
+
+    // Stats
+    let longestStreak = 0, tempStreak = 0, totalActiveDays = 0;
+    for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+      if ((dailyHours[toLocalDateStr(d)] || 0) > 0) {
+        totalActiveDays++; tempStreak++; longestStreak = Math.max(longestStreak, tempStreak);
+      } else { tempStreak = 0; }
+    }
+    let currentStreak = 0;
+    const check = new Date(today);
+    while ((dailyHours[toLocalDateStr(check)] || 0) > 0) { currentStreak++; check.setDate(check.getDate() - 1); }
+
     document.getElementById('currentStreak').textContent = currentStreak;
     document.getElementById('longestStreak').textContent = longestStreak;
     document.getElementById('totalActiveDays').textContent = totalActiveDays;
-
-    // --- Total Study Hours ---
     const totalStudyHours = studyLogs.reduce((sum, log) => sum + log.hours, 0);
     document.getElementById('totalStudyHours').textContent = totalStudyHours.toFixed(1);
   } catch (e) {
     console.error('renderStreakAndWeekly failed:', e);
   }
 }
+window.BT_renderStreak = renderStreakAndWeekly;
 
 // ===== START =====
 init();
@@ -1025,8 +1027,14 @@ function startSync() {
 function stopSync() { if (unsub) { unsub(); unsub = null; } }
 
 // ---------- auth state ----------
+function pad(n) { return String(n).padStart(2, '0'); }
 onAuthStateChanged(auth, (u) => {
   user = u;
+  if (u && u.metadata && u.metadata.creationTime) {
+    const c = new Date(u.metadata.creationTime);
+    localStorage.setItem('boardTracker_signupDate', c.getFullYear() + '-' + pad(c.getMonth() + 1) + '-' + pad(c.getDate()));
+    if (window.BT_renderStreak) window.BT_renderStreak();
+  }
   renderAccountBar();
   if (u) startSync(); else stopSync();
 });
@@ -1103,6 +1111,7 @@ signOutBtn.addEventListener('click', async () => {
     await signOut(auth);
     // next person on this browser starts clean; the signed-out account's data stays safe in the cloud
     localStorage.removeItem('boardTracker_uid');
+    localStorage.removeItem('boardTracker_signupDate');
     window.BT_applyState({});
   } catch (err) { alert(friendlyError(err)); }
 });
