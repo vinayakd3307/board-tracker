@@ -138,7 +138,8 @@
   .cal-months { display: grid; column-gap: 3px; height: 14px; margin-bottom: 4px; }
   .cal-months span { font-size: 0.7rem; color: #8b949e; font-weight: 600; white-space: nowrap; line-height: 14px; }
   .cal-grid { display: grid; grid-template-rows: repeat(7, 12px); grid-auto-flow: column; grid-auto-columns: 12px; gap: 3px; }
-  .streak-day.blank { visibility: hidden; }
+  .streak-day.before { opacity: 0.35; }
+  .panel-title { text-align: center; font-size: 0.85rem; color: #8b949e; margin-bottom: 8px; }
   .streak-day.future { opacity: 0.35; }
   .streak-legend { display: flex; gap: 8px; margin-top: 12px; font-size: 0.7rem; color: #8b949e; align-items: center; flex-wrap: wrap; justify-content: center; }
   .streak-legend span { display: flex; align-items: center; gap: 4px; }
@@ -810,6 +811,9 @@ function renderStreakAndWeekly() {
     const gridStart = new Date(start); gridStart.setDate(start.getDate() - mondayOffset(start));
     const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
     const gridEnd = new Date(monthEnd); gridEnd.setDate(monthEnd.getDate() + (6 - mondayOffset(monthEnd)));
+    // Always show at least 26 weeks so the calendar looks full from day one
+    const minStart = new Date(gridEnd); minStart.setDate(gridEnd.getDate() - (26 * 7 - 1));
+    if (minStart < gridStart) gridStart.setTime(minStart.getTime());
 
     let cells = '';
     let col = 0, dow = 0;
@@ -820,13 +824,13 @@ function renderStreakAndWeekly() {
         let label = null;
         for (let k = 0; k < 7; k++) {
           const x = new Date(d); x.setDate(d.getDate() + k);
-          if (x.getDate() === 1 && x >= start && x <= monthEnd) { label = x.toLocaleString('en-IN', { month: 'short' }); break; }
+          if (x.getDate() === 1 && x <= monthEnd) { label = x.toLocaleString('en-IN', { month: 'short' }); break; }
         }
-        if (!label && col === 0) label = start.toLocaleString('en-IN', { month: 'short' });
+        if (!label && col === 0) label = d.toLocaleString('en-IN', { month: 'short' });
         if (label) labels.push({ col, label });
       }
       if (d < start) {
-        cells += '<div class="streak-day blank"></div>';
+        cells += '<div class="streak-day level-0 before" title="Before you started tracking"></div>';
       } else {
         const dateStr = toLocalDateStr(d);
         const hours = dailyHours[dateStr] || 0;
