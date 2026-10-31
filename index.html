@@ -150,6 +150,35 @@
   .cal-day.level-4 { background: #3fb950; border-color: #3fb950; color: #0d1117; }
   .cal-day.today { outline: 2px solid #58a6ff; outline-offset: 1px; }
   .cal-hrs { font-size: 0.68rem; align-self: flex-end; font-variant-numeric: tabular-nums; }
+  /* Day detail, subject chart */
+  .cal-day { cursor: pointer; }
+  .cal-day.empty { cursor: default; }
+  .cal-day:focus-visible { outline: 2px solid #f0f6fc; outline-offset: 1px; }
+  .cal-day.selected { box-shadow: 0 0 0 2px #d2a8ff; }
+  .day-detail { max-width: 460px; margin: 14px auto 0; background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 12px 14px; }
+  .day-detail-hint { text-align: center; color: #8b949e; font-size: 0.8rem; margin-top: 12px; }
+  .day-detail-title { font-size: 0.9rem; font-weight: 600; color: #f0f6fc; margin-bottom: 10px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .day-detail-total { color: #58a6ff; font-variant-numeric: tabular-nums; }
+  .day-session { padding: 8px 0; border-top: 1px solid #21262d; }
+  .day-session:first-of-type { border-top: none; padding-top: 0; }
+  .day-session-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .day-session-top .logger-entry-subject { min-width: 0; padding: 2px 8px; }
+  .day-session-chapter { flex: 1; font-size: 0.85rem; color: #c9d1d9; min-width: 80px; }
+  .day-session-hours { font-size: 0.85rem; font-weight: 600; color: #58a6ff; }
+  .day-session-notes { margin-top: 6px; font-size: 0.8rem; color: #8b949e; font-style: italic; white-space: pre-wrap; }
+  .day-empty { color: #8b949e; font-size: 0.85rem; }
+  .subject-chart-wrap { margin-top: 24px; padding-top: 16px; border-top: 1px solid #21262d; }
+  .subject-chart-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .subject-chart-head .panel-title { margin: 0; text-align: left; }
+  .seg { display: inline-flex; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; }
+  .seg-btn { background: transparent; border: none; color: #8b949e; padding: 5px 12px; font-size: 0.78rem; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .seg-btn.active { background: #21262d; color: #f0f6fc; }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .bar-label { flex: 0 0 150px; font-size: 0.82rem; color: #c9d1d9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-track { flex: 1; height: 14px; background: #0d1117; border: 1px solid #21262d; border-radius: 7px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 7px; transition: width 0.3s ease; }
+  .bar-val { flex: 0 0 52px; text-align: right; font-size: 0.8rem; color: #f0f6fc; font-variant-numeric: tabular-nums; }
+  @media (max-width: 520px) { .bar-label { flex-basis: 96px; font-size: 0.75rem; } }
   .streak-legend { display: flex; gap: 8px; margin-top: 12px; font-size: 0.7rem; color: #8b949e; align-items: center; flex-wrap: wrap; justify-content: center; }
   .streak-legend span { display: flex; align-items: center; gap: 4px; }
   .streak-legend-box.level-0 { background: #161b22; }
@@ -308,6 +337,7 @@
     <div class="streak-panel">
       <div class="panel-title">Contribution Calendar</div>
       <div class="streak-calendar" id="streakCalendar"></div>
+      <div id="dayDetail"></div>
       <div class="streak-legend">
         <span>Less</span>
         <span class="streak-legend-box level-0"></span>
@@ -337,6 +367,21 @@
           <span class="stat-value" id="totalStudyHours">0.0</span>
           <span class="stat-label">Total Hours</span>
         </span>
+        <span class="stat-divider">|</span>
+        <span class="stat-item">
+          <span class="stat-value" id="weekHours">0.0</span>
+          <span class="stat-label">This Week (h)</span>
+        </span>
+      </div>
+      <div class="subject-chart-wrap">
+        <div class="subject-chart-head">
+          <div class="panel-title">Hours by subject</div>
+          <div class="seg">
+            <button type="button" class="seg-btn active" id="chartAll">All time</button>
+            <button type="button" class="seg-btn" id="chartWeek">This week</button>
+          </div>
+        </div>
+        <div id="subjectChart"></div>
       </div>
     </div>
   </div>
@@ -796,6 +841,77 @@ function escapeHtml(text) {
 // ===== STREAK CALENDAR (month view) =====
 let calMonth = null; // first day of the month being shown
 
+let selectedDay = null; // 'YYYY-MM-DD' of the day opened in the detail panel
+let chartMode = 'all';  // 'all' or 'week'
+
+function weekRangeStrings() {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const mon = new Date(today); mon.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  return [toLocalDateStr(mon), toLocalDateStr(sun)];
+}
+
+function updateWeekHours() {
+  const [from, to] = weekRangeStrings();
+  const total = studyLogs.filter(l => l.date >= from && l.date <= to).reduce((a, l) => a + l.hours, 0);
+  const el = document.getElementById('weekHours');
+  if (el) el.textContent = total.toFixed(1);
+}
+
+function renderSubjectChart() {
+  const el = document.getElementById('subjectChart');
+  if (!el) return;
+  let logs = studyLogs;
+  if (chartMode === 'week') {
+    const [from, to] = weekRangeStrings();
+    logs = studyLogs.filter(l => l.date >= from && l.date <= to);
+  }
+  const totals = SUBJECTS.map(sub => ({
+    sub, hours: logs.filter(l => l.subject === sub.id).reduce((a, l) => a + l.hours, 0)
+  }));
+  const max = Math.max(...totals.map(t => t.hours), 0);
+  if (max === 0) {
+    el.innerHTML = `<div class="day-empty">No study hours ${chartMode === 'week' ? 'this week' : 'logged'} yet.</div>`;
+    return;
+  }
+  el.innerHTML = totals.map(t => {
+    const w = t.hours > 0 ? Math.max(2, (t.hours / max) * 100) : 0;
+    return `<div class="bar-row">
+      <span class="bar-label">${t.sub.icon} ${escapeHtml(t.sub.name)}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${w}%; background:${t.sub.color}"></div></div>
+      <span class="bar-val">${t.hours.toFixed(1)}h</span>
+    </div>`;
+  }).join('');
+}
+
+function renderDayDetail() {
+  const el = document.getElementById('dayDetail');
+  if (!el) return;
+  if (!selectedDay) {
+    el.innerHTML = '<div class="day-detail-hint">Click a day to see what you studied.</div>';
+    return;
+  }
+  const entries = studyLogs.filter(l => l.date === selectedDay).sort((a, b) => a.timestamp - b.timestamp);
+  const total = entries.reduce((a, l) => a + l.hours, 0);
+  const nice = new Date(selectedDay + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const body = entries.length
+    ? entries.map(l => `
+        <div class="day-session">
+          <div class="day-session-top">
+            <span class="logger-entry-subject subject-${l.subject}">${getSubjectIcon(l.subject)} ${getSubjectName(l.subject)}</span>
+            <span class="day-session-chapter">${escapeHtml(l.chapter)}</span>
+            <span class="day-session-hours">${l.hours}h</span>
+          </div>
+          ${l.notes ? `<div class="day-session-notes">${escapeHtml(l.notes)}</div>` : ''}
+        </div>`).join('')
+    : '<div class="day-empty">No sessions logged on this day.</div>';
+  el.innerHTML = `<div class="day-detail">
+    <div class="day-detail-title"><span>${nice}</span>${entries.length ? `<span class="day-detail-total">${total.toFixed(1)}h total</span>` : ''}</div>
+    ${body}
+  </div>`;
+}
+
 function renderStreakAndWeekly() {
   try {
     const calendarEl = document.getElementById('streakCalendar');
@@ -843,8 +959,9 @@ function renderStreakAndWeekly() {
       if (d < start) cls.push('before');
       if (d > today) cls.push('future');
       if (dateStr === todayStr) cls.push('today');
+      if (dateStr === selectedDay) cls.push('selected');
       const tip = hours > 0 ? `${hours}h on ${formatDate(dateStr)}` : (d > today ? formatDate(dateStr) : `No study on ${formatDate(dateStr)}`);
-      cells += `<div class="${cls.join(' ')}" title="${tip}"><span>${day}</span>${hours > 0 ? `<span class="cal-hrs">${hours}h</span>` : ''}</div>`;
+      cells += `<div class="${cls.join(' ')}" data-date="${dateStr}" tabindex="0" role="button" title="${tip}"><span>${day}</span>${hours > 0 ? `<span class="cal-hrs">${hours}h</span>` : ''}</div>`;
     }
 
     const title = calMonth.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
@@ -858,6 +975,18 @@ function renderStreakAndWeekly() {
         </div>
         <div class="cal-grid7">${dows}${cells}</div>
       </div>`;
+    const pickDay = (e) => {
+      const c = e.target && e.target.closest ? e.target.closest('.cal-day[data-date]') : null;
+      if (!c) return false;
+      const ds = c.dataset.date;
+      selectedDay = (selectedDay === ds) ? null : ds;
+      renderStreakAndWeekly();
+      const again = calendarEl.querySelector('.cal-day[data-date="' + ds + '"]');
+      if (again && again.focus && e.type === 'keydown') again.focus();
+      return true;
+    };
+    calendarEl.onclick = pickDay;
+    calendarEl.onkeydown = (e) => { if ((e.key === 'Enter' || e.key === ' ') && pickDay(e)) e.preventDefault(); };
     const prev = calendarEl.querySelector('#calPrev'), next = calendarEl.querySelector('#calNext');
     if (prev) prev.onclick = () => { calMonth = new Date(y, m - 1, 1); renderStreakAndWeekly(); };
     if (next) next.onclick = () => { calMonth = new Date(y, m + 1, 1); renderStreakAndWeekly(); };
@@ -878,6 +1007,9 @@ function renderStreakAndWeekly() {
     document.getElementById('totalActiveDays').textContent = totalActiveDays;
     const totalStudyHours = studyLogs.reduce((sum, log) => sum + log.hours, 0);
     document.getElementById('totalStudyHours').textContent = totalStudyHours.toFixed(1);
+    updateWeekHours();
+    renderSubjectChart();
+    renderDayDetail();
   } catch (e) {
     console.error('renderStreakAndWeekly failed:', e);
   }
@@ -886,6 +1018,15 @@ window.BT_renderStreak = renderStreakAndWeekly;
 
 // ===== START =====
 init();
+
+['chartAll', 'chartWeek'].forEach(id => {
+  document.getElementById(id).addEventListener('click', () => {
+    chartMode = id === 'chartAll' ? 'all' : 'week';
+    document.getElementById('chartAll').classList.toggle('active', chartMode === 'all');
+    document.getElementById('chartWeek').classList.toggle('active', chartMode === 'week');
+    renderSubjectChart();
+  });
+});
 
 document.getElementById('accountBtn').addEventListener('click', () => {
   if (window.BT_openAuth) window.BT_openAuth();
