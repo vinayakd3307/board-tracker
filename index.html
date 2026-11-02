@@ -284,7 +284,7 @@
       </div>
       <div class="logger-field">
         <label>Notes (optional)</label>
-        <textarea id="logNotes" placeholder="What did you cover? Any doubts?"></textarea>
+        <textarea id="logNotes" placeholder="What did you cover? Any doubts? (Enter to log, Shift+Enter for new line)"></textarea>
       </div>
       <button type="submit" class="logger-btn">Log Study Session</button>
     </form>
@@ -496,10 +496,21 @@ function init() {
   // Logger form submit
   if (loggerForm) {
     loggerForm.addEventListener('submit', handleLogSubmit);
+    // Enter in the notes box logs the session; Shift+Enter adds a new line
+    const notesBox = document.getElementById('logNotes');
+    if (notesBox) {
+      notesBox.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          if (loggerForm.requestSubmit) loggerForm.requestSubmit();
+          else loggerForm.dispatchEvent(new Event('submit', { cancelable: true }));
+        }
+      });
+    }
   }
   // Set today's date as default
   const logDateInput = document.getElementById('logDate');
-  if (logDateInput) logDateInput.value = new Date().toISOString().split('T')[0];
+  if (logDateInput) logDateInput.value = toLocalDateStr(new Date());
 
   // Defer streak/weekly render to ensure DOM/CSS ready
   setTimeout(() => {
@@ -811,7 +822,7 @@ function handleLogSubmit(e) {
   saveAll();
 
   document.getElementById('loggerForm').reset();
-  document.getElementById('logDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('logDate').value = toLocalDateStr(new Date());
 
   renderStudyLogs();
   try { renderStreakAndWeekly(); } catch (e) { console.error('renderStreakAndWeekly failed:', e); }
